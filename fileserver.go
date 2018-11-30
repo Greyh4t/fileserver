@@ -4,6 +4,7 @@ import (
 	"flag"
 	"fmt"
 	"net/url"
+	"os"
 	"path"
 	"strings"
 
@@ -16,14 +17,46 @@ var (
 	password string
 	dir      string
 	head     = `<html>
-	<form action="/" enctype="multipart/form-data" method="post">
+	<form action="/newdir/" method="POST">
+		<input type="text" name="dirname">
+		<input type="submit" value="新建目录">
+	</form>
+	<form action="/" enctype="multipart/form-data" method="POST">
 		<input type="file" name="files" multiple="multiple" />
 		<input type="submit" value="上传" />
 	</form>
+	<script>
+		window.onload = function() {
+			var prelist = document.getElementsByTagName("pre");
+			if (prelist.length > 0) {
+				var pre = prelist[0];
+				var alist = pre.getElementsByTagName("a");
+				if (alist.length > 0) {
+					for (var i = 0; i < alist.length; i++) {
+						var a = alist[i];
+						var input = document.createElement("input");
+						input.type = "checkbox";
+						input.name = "list[]";
+						input.value = a.text;
+						pre.insertBefore(input, a);
+					}
+					var input = document.createElement("input");
+					input.type = "submit";
+					input.value = "删除选中";
+					pre.parentNode.append(input);
+				}			
+			}
+		}
+    </script>
+	<form action="/del/" method="POST">
 `
 	errFmt = `<font color="red">%s</font><br />
 	<input type="button" value="返回" onclick="history.back()">`
 )
+
+type Files struct {
+	List []string `form:"list[]"`
+}
 
 func init() {
 	flag.StringVar(&port, "port", "80", "http port")
@@ -38,25 +71,68 @@ func uploadFile(c *gin.Context) {
 	if err != nil {
 		c.Header("Content-Type", "text/html; charset=utf-8")
 		c.String(200, fmt.Sprintf(errFmt, "Error: "+err.Error()))
+		return
 	}
 
-	var p = "/"
-	u, err := url.ParseRequestURI(c.GetHeader("Referer"))
-	if err == nil {
-		// remove ../
-		p = path.Clean("/"+u.Path) + "/"
-	}
-
+	p := getPath(c.GetHeader("referer"))
 	files := form.File["files"]
 	for _, file := range files {
 		err = c.SaveUploadedFile(file, path.Join(dir, p, path.Clean("/"+file.Filename)))
 		if err != nil {
 			c.Header("Content-Type", "text/html; charset=utf-8")
 			c.String(200, fmt.Sprintf(errFmt, file.Filename+" 上传失败<br />Error: "+err.Error()))
-			break
+			return
 		}
 	}
 	c.Redirect(302, p)
+}
+
+func delFile(c *gin.Context) {
+	var files Files
+	err := c.ShouldBind(&files)
+	if err != nil {
+		c.Header("Content-Type", "text/html; charset=utf-8")
+		c.String(200, fmt.Sprintf(errFmt, "Error: "+err.Error()))
+		return
+	}
+
+	p := getPath(c.GetHeader("referer"))
+	for _, file := range files.List {
+		err = os.RemoveAll(path.Join(dir, p, path.Clean("/"+file)))
+		if err != nil {
+			c.Header("Content-Type", "text/html; charset=utf-8")
+			c.String(200, fmt.Sprintf(errFmt, file+" 删除失败<br />Error: "+err.Error()))
+			return
+		}
+	}
+	c.Redirect(302, p)
+}
+
+func newDir(c *gin.Context) {
+	p := getPath(c.GetHeader("referer"))
+	dirname := c.PostForm("dirname")
+	if dirname != "" {
+		err := os.MkdirAll(path.Join(dir, p, path.Clean("/"+dirname)), os.ModeDir)
+		if err != nil {
+			c.Header("Content-Type", "text/html; charset=utf-8")
+			c.String(200, fmt.Sprintf(errFmt, "Error: "+err.Error()))
+			return
+		}
+	}
+	c.Redirect(302, p)
+}
+
+func getPath(referer string) string {
+	var p = "/"
+	u, err := url.ParseRequestURI(referer)
+	if err == nil {
+		// remove ../
+		p = path.Clean("/" + u.Path)
+		if p != "/" {
+			p += "/"
+		}
+	}
+	return p
 }
 
 func writeHead(c *gin.Context) {
@@ -82,6 +158,8 @@ func main() {
 
 	getGroup.StaticFS("/", gin.Dir(dir, true))
 	authGroup.POST("/", uploadFile)
+	authGroup.POST("/del/", delFile)
+	authGroup.POST("/newdir/", newDir)
 
 	err := r.Run(":" + port)
 	if err != nil {
