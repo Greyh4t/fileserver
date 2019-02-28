@@ -16,4 +16,4 @@ Usage of fileserver.exe:
 ```
 
 ## View
-![](image/view.png)
+![](view.png)
