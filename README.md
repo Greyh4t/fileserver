@@ -1,4 +1,19 @@
 # fileserver
 
-简易文件服务器
-支持文件下载及管理
+simple file server, support manage files
+
+## Usage
+```
+Usage of fileserver.exe:
+  -dir string
+        file dir (default "./")
+  -pass string
+        password
+  -port string
+        http port (default "80")
+  -user string
+        username
+```
+
+## View
+![](image/view.png)
